@@ -446,9 +446,8 @@ public class Util
         return types[types.length - 1];
     }
 
-    private final ArrayList<Type> conversionTypes = new ArrayList<Type>();
+    /*private final ArrayList<Type> conversionTypes = new ArrayList<Type>();
     
-    /*
     private Map cache = new HashMap();
     public Type[] jimpleTypesOfFieldOrMethodDescriptor(String descriptor)
     {
@@ -557,14 +556,11 @@ public class Util
 */
 
 
-    private final Map<String, Type[]> cache = new HashMap<String, Type[]>();
     public Type[] jimpleTypesOfFieldOrMethodDescriptor(String descriptor)
     {
-        Type[] ret = cache.get(descriptor);
-        if( ret != null ) return ret;
         char[] d = descriptor.toCharArray();
         int p = 0;
-        conversionTypes.clear();
+        ArrayList<Type> conversionTypes = new ArrayList<Type>();
 
 outer:
         while(p<d.length)
@@ -650,9 +646,7 @@ swtch:
             conversionTypes.add(t);
         }
 
-        ret = conversionTypes.toArray(new Type[0]);
-        cache.put(descriptor, ret);
-        return ret;
+        return conversionTypes.toArray(new Type[0]);
     }
 
     public Type jimpleTypeOfFieldDescriptor(String descriptor)
