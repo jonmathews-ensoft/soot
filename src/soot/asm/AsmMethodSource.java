@@ -83,6 +83,7 @@ import soot.CharType;
 import soot.DoubleType;
 import soot.FloatType;
 import soot.IntType;
+import soot.LambdaMetaFactory;
 import soot.Local;
 import soot.LongType;
 import soot.MethodSource;
@@ -1273,19 +1274,32 @@ final class AsmMethodSource implements MethodSource {
 			
 			returnType = types[types.length - 1];
 			
+			SootMethodRef bootstrap_model = null;
+			
+			// FIXME? better way to do this check?
+			if(bsmMethodRef.toString().equals("<java.lang.invoke.LambdaMetafactory: java.lang.invoke.CallSite metafactory(java.lang.invoke.MethodHandles$Lookup,java.lang.String,java.lang.invoke.MethodType,java.lang.invoke.MethodType,java.lang.invoke.MethodHandle,java.lang.invoke.MethodType)>"))
+    			    bootstrap_model = LambdaMetaFactory.makeLambdaHelper(bsmMethodArgs, insn.bsm.getTag(), insn.name, types);
+			
+			
+			InvokeExpr expr;
+			
+			if(bootstrap_model != null) {
+			    expr = Jimple.v().newStaticInvokeExpr(bootstrap_model, methodArgs);
+			} else {
 			// we always model invokeDynamic method refs as static method references
 			// of methods on the type SootClass.INVOKEDYNAMIC_DUMMY_CLASS_NAME
 			SootMethodRef methodRef = Scene.v().makeMethodRef(bclass, insn.name, parameterTypes, returnType, true);		
 			
-			DynamicInvokeExpr indy = Jimple.v().newDynamicInvokeExpr(bsmMethodRef,
+                            expr = Jimple.v().newDynamicInvokeExpr(bsmMethodRef,
 					bsmMethodArgs, methodRef, insn.bsm.getTag(), methodArgs);
+                        }
 			
 			for (int i = 0; i < args.length - 1; i++) {
-				boxes[i] = indy.getArgBox(i);
+				boxes[i] = expr.getArgBox(i);
 				args[i].addBox(boxes[i]);
 			}
 			
-			opr = new Operand(insn,indy);
+			opr = new Operand(insn,expr);
 			frame.boxes(boxes);
 			frame.in(args);
 			frame.out(opr);
