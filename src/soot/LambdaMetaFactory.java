@@ -104,8 +104,9 @@ public final class LambdaMetaFactory {
         tdispatch.setSource(ms);
         
         Scene.v().addClass(tclass);
+        tclass.setApplicationClass(); // FIXME: should be inferred from Soot settings; failing to set correctly prevents serialization to Jimple text format
             
-        System.out.println(tboot);
+        // System.out.println(tboot);
         
         /*java.io.PrintWriter pw = new java.io.PrintWriter(System.out);
         Printer.v().printTo(tclass, pw);
@@ -137,6 +138,7 @@ public final class LambdaMetaFactory {
 
             if(m.getName().equals("<init>")) {
                 Local l = Jimple.v().newLocal("r", tclass.getType());
+                jb.getLocals().add(l);
                 us.add(Jimple.v().newIdentityStmt(
                     l,
                     Jimple.v().newThisRef(tclass.getType())
@@ -151,7 +153,8 @@ public final class LambdaMetaFactory {
                 ));
                 for(SootField f : capFields) {
                     int i = us.size() - 2;
-                    Local l2 = Jimple.v().newLocal("c" + i, f.getType());
+                    Local l2 = Jimple.v().newLocal("c" + i, f.getType()); // FIXME: non-standard prefix, should be based on type; fix cases below as well
+                    jb.getLocals().add(l2);
                     us.add(Jimple.v().newIdentityStmt(
                         l2,
                         Jimple.v().newParameterRef(f.getType(), i)
@@ -164,6 +167,7 @@ public final class LambdaMetaFactory {
                 us.add(Jimple.v().newReturnVoidStmt());
             } else if(m.getName().equals("bootstrap$")) {
                 Local l = Jimple.v().newLocal("r", tclass.getType());
+                jb.getLocals().add(l);
                 Value val = Jimple.v().newNewExpr(tclass.getType());
                 List<Value> capVals = new ArrayList<Value>();
                 us.add(Jimple.v().newAssignStmt(l, val));
@@ -176,6 +180,7 @@ public final class LambdaMetaFactory {
                 us.add(Jimple.v().newReturnStmt(l));
             } else {
                 Local this_ = Jimple.v().newLocal("r", tclass.getType());
+                jb.getLocals().add(this_);
                 us.add(Jimple.v().newIdentityStmt(
                     this_,
                     Jimple.v().newThisRef(tclass.getType())
@@ -186,6 +191,7 @@ public final class LambdaMetaFactory {
                 for(SootField f : capFields) {
                     int i = args.size();
                     Local l = Jimple.v().newLocal("c" + i, f.getType());
+                    jb.getLocals().add(l);
                     us.add(Jimple.v().newAssignStmt(
                         l, 
                         Jimple.v().newInstanceFieldRef(this_, f.makeRef())
@@ -196,6 +202,7 @@ public final class LambdaMetaFactory {
                 for(Type ty : paramTypes) {
                     int i = args.size();
                     Local l = Jimple.v().newLocal("a" + i, ty);
+                    jb.getLocals().add(l);
                     us.add(Jimple.v().newIdentityStmt(
                         l,
                         Jimple.v().newParameterRef(ty, i)
@@ -204,6 +211,7 @@ public final class LambdaMetaFactory {
                 }
                 
                 Local ret = Jimple.v().newLocal("r", retType);
+                jb.getLocals().add(ret);
                 us.add(Jimple.v().newAssignStmt(
                     ret,
                     Jimple.v().newStaticInvokeExpr(implMethod, args)
