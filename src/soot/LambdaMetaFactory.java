@@ -19,6 +19,7 @@
 package soot;
 
 import soot.jimple.*;
+import soot.jimple.toolkits.scalar.LocalNameStandardizer;
 import soot.coffi.Util;
 
 import java.util.ArrayList;
@@ -153,7 +154,7 @@ public final class LambdaMetaFactory {
                 ));
                 for(SootField f : capFields) {
                     int i = us.size() - 2;
-                    Local l2 = Jimple.v().newLocal("c" + i, f.getType()); // FIXME: non-standard prefix, should be based on type; fix cases below as well
+                    Local l2 = Jimple.v().newLocal("c" + i, f.getType());
                     jb.getLocals().add(l2);
                     us.add(Jimple.v().newIdentityStmt(
                         l2,
@@ -218,6 +219,9 @@ public final class LambdaMetaFactory {
                 ));
                 us.add(Jimple.v().newReturnStmt(ret));
             }
+            
+            // rename locals consistent with JimpleBodyPack
+            LocalNameStandardizer.v().transform(jb);
             return jb;
         }
     }
