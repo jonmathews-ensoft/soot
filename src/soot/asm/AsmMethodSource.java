@@ -1341,7 +1341,7 @@ final class AsmMethodSource implements MethodSource {
 		SootClass bsmCls = Scene.v().getSootClass(bsmClsName);
 		List<Type> bsmSigTypes = AsmUtil.toJimpleDesc(methodHandle.getDesc());
 		Type returnType = bsmSigTypes.remove(bsmSigTypes.size() - 1);
-		return Scene.v().makeMethodRef(bsmCls, methodHandle.getName(), bsmSigTypes, returnType, true /*always static*/);
+		return Scene.v().makeMethodRef(bsmCls, methodHandle.getName(), bsmSigTypes, returnType, true /*FIXME: not always static*/); 
 	}
 
 	private void convertMultiANewArrayInsn(MultiANewArrayInsnNode insn) {

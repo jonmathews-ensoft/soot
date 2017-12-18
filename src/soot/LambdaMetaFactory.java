@@ -37,7 +37,7 @@ public final class LambdaMetaFactory {
            !(bootstrapArgs.get(0) instanceof ClassConstant) ||
            !(bootstrapArgs.get(1) instanceof MethodHandle) ||
            !(bootstrapArgs.get(2) instanceof ClassConstant)) {
-            G.v().out.println("warning: LambdaMetaFactory: unexpected arguments for LambdaMetaFactor.metaFactory");
+            G.v().out.println("warning: LambdaMetaFactory: unexpected arguments for LambdaMetaFactory.metaFactory");
             return null;
         }
         String samMethodType = ((ClassConstant) bootstrapArgs.get(0)).getValue();
@@ -46,7 +46,8 @@ public final class LambdaMetaFactory {
         if(!samMethodType.equals(instantiatedMethodType)) {
             G.v().out.println("warning: LambdaMetaFactory: " + 
                               samMethodType + " != " + instantiatedMethodType);
-            return null;
+            // FIXME: this happens for method references to constructors, must be handled
+//            return null;
         }
         
         Type[] samTypes = Util.v().jimpleTypesOfFieldOrMethodDescriptor(samMethodType);
@@ -61,9 +62,11 @@ public final class LambdaMetaFactory {
         SootClass iface = ((RefType) types[types.length-1]).getSootClass();
         
         // Our thunk class implements the functional interface
-        String className = "soot.dummy." + implMethod.name() + "$" + uniqSupply();
+        String dummyName = "<init>".equals(implMethod.name()) ? "init" : implMethod.name(); // class names cannot contain <>
+        String className = "soot.dummy." + dummyName + "_" + uniqSupply();
         SootClass tclass = new SootClass(className);
         tclass.addInterface(iface);
+        tclass.setSuperclass(Scene.v().getSootClass("java.lang.Object"));
         
         // It contains fields for all the captures in the lambda
         List<SootField> capFields = new ArrayList<SootField>(capTypes.size());
@@ -167,16 +170,29 @@ public final class LambdaMetaFactory {
                 }
                 us.add(Jimple.v().newReturnVoidStmt());
             } else if(m.getName().equals("bootstrap$")) {
+            	
+                List<Value> capValues = new ArrayList<Value>();
+                List<Type> capTypes = new ArrayList<Type>();
+                int i=0;
+                for (SootField capField : capFields) {
+                		Type type = capField.getType();
+                		capTypes.add(type);
+                		Local p = Jimple.v().newLocal("p", type);
+                		jb.getLocals().add(p);
+                		ParameterRef pref = Jimple.v().newParameterRef(type,i);
+                		us.add(Jimple.v().newIdentityStmt(p, pref));
+					capValues.add(p);
+					i++;
+				}
                 Local l = Jimple.v().newLocal("r", tclass.getType());
                 jb.getLocals().add(l);
                 Value val = Jimple.v().newNewExpr(tclass.getType());
-                List<Value> capVals = new ArrayList<Value>();
                 us.add(Jimple.v().newAssignStmt(l, val));
                 us.add(Jimple.v().newInvokeStmt(
                     Jimple.v().newSpecialInvokeExpr(
                         l,
-                        Scene.v().makeConstructorRef(tclass, Collections.<Type>emptyList()),
-                        Collections.<Value>emptyList())
+                        Scene.v().makeConstructorRef(tclass, capTypes),
+                        capValues)
                 ));
                 us.add(Jimple.v().newReturnStmt(l));
             } else {
@@ -200,30 +216,103 @@ public final class LambdaMetaFactory {
                     args.add(l);
                 }
 
+                int j = 0;
                 for(Type ty : paramTypes) {
-                    int i = args.size();
-                    Local l = Jimple.v().newLocal("a" + i, ty);
+                    Local l = Jimple.v().newLocal("a" + j, ty);
                     jb.getLocals().add(l);
                     us.add(Jimple.v().newIdentityStmt(
                         l,
-                        Jimple.v().newParameterRef(ty, i)
+                        Jimple.v().newParameterRef(ty, j)
                     ));
                     args.add(l);
+                    j++;
                 }
                 
-                Local ret = Jimple.v().newLocal("r", retType);
-                jb.getLocals().add(ret);
-                us.add(Jimple.v().newAssignStmt(
-                    ret,
-                    Jimple.v().newStaticInvokeExpr(implMethod, args)
-                ));
-                us.add(Jimple.v().newReturnStmt(ret));
+                invokeImplMethod(jb, us, args);
             }
             
             // rename locals consistent with JimpleBodyPack
             LocalNameStandardizer.v().transform(jb);
             return jb;
         }
+
+		private void invokeImplMethod(JimpleBody jb, PatchingChain<Unit> us, List<Local> args) {
+			Value value = _invokeImplMethod(jb, us, args);
+			
+			if (value instanceof InvokeExpr && soot.VoidType.v().equals(implMethod.returnType())) {
+				us.add(Jimple.v().newInvokeStmt(value));
+			} else {
+				Local ret = Jimple.v().newLocal("r", retType);
+				jb.getLocals().add(ret);
+				us.add(Jimple.v().newAssignStmt(
+						ret,
+						value
+						));
+				us.add(Jimple.v().newReturnStmt(ret));
+			}
+		}
+
+		private Value _invokeImplMethod(JimpleBody jb, PatchingChain<Unit> us, List<Local> args) {
+			// A lambda capturing 'this' may be implemented by a private instance method.
+	        // A method reference to an instance method may be implemented by the instance method itself.
+	        // To use the correct invocation style, resolve the method and determine how the compiler
+	        // implemented the lambda or method reference.
+	        // NOTE: the SootMethodRef is set to static, and has to be ignored for this purpose.
+			
+	        SootClass implClass = implMethod.declaringClass();
+			SootMethod method = implClass.getMethodUnsafe(implMethod.name(), implMethod.parameterTypes(), implMethod.returnType());
+			if (method == null) {
+				// resolve failed, fall back to static invocation
+	            G.v().out.println("warning: LambdaMetaFactory: unable to resolve target method, invocation may be incorrect; method: " + implMethod.getSignature());
+				return Jimple.v().newStaticInvokeExpr(implMethod, args);
+			}
+			if (method.isStatic()) {
+				return Jimple.v().newStaticInvokeExpr(implMethod, args);
+			} else {
+				// instance methods
+				
+				if (method.isConstructor()) {
+					// TODO: new array?
+					// invoke special
+	                RefType type = method.getDeclaringClass().getType();
+	                NewExpr newRef = Jimple.v().newNewExpr(type);
+	                Local newLocal = Jimple.v().newLocal("rnew", type);
+	                jb.getLocals().add(newLocal);
+	    				us.add(Jimple.v().newAssignStmt(
+	    				    newLocal,
+	    				    newRef
+	    				));
+					SpecialInvokeExpr specialInvokeExpr = Jimple.v().newSpecialInvokeExpr(newLocal, method.makeRef(), args); // args does not include the base
+					InvokeStmt invokeStmt = Jimple.v().newInvokeStmt(specialInvokeExpr);
+					us.add(invokeStmt); 
+					return newLocal;
+					
+				} else {
+					// FIXME: how to log assertions?
+					if (args.size() < 1)
+						G.v().out.println("warning: LambdaMetaFactory: missing base reference for instance invocation, method: " + implMethod.getSignature());
+					
+					if (method.isPrivate()) {
+						// invoke special
+						return Jimple.v().newSpecialInvokeExpr(args.get(0), method.makeRef(), rest(args));
+					} else {
+						if (implClass.isInterface())
+							return Jimple.v().newInterfaceInvokeExpr(args.get(0), method.makeRef(), rest(args));
+						else
+							// invoke virtual
+							return Jimple.v().newVirtualInvokeExpr(args.get(0), method.makeRef(), rest(args));
+					}
+				}
+			}
+		}
+
+		private List<Local> rest(List<Local> args) {
+			int first = 1;
+			int last = args.size() - 1;
+			if (last < first)
+				return Collections.<Local>emptyList();
+			return args.subList(first, last);
+		}
     }
     
     // FIXME: Move to 'G'?
