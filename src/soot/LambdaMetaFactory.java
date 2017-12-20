@@ -155,8 +155,8 @@ public final class LambdaMetaFactory {
                         ),
                         Collections.<Value>emptyList())
                 ));
+                int i=0;
                 for(SootField f : capFields) {
-                    int i = us.size() - 2;
                     Local l2 = Jimple.v().newLocal("c" + i, f.getType());
                     jb.getLocals().add(l2);
                     us.add(Jimple.v().newIdentityStmt(
@@ -167,6 +167,7 @@ public final class LambdaMetaFactory {
                         Jimple.v().newInstanceFieldRef(l, f.makeRef()),
                         l2
                     ));
+                    i++;
                 }
                 us.add(Jimple.v().newReturnVoidStmt());
             } else if(m.getName().equals("bootstrap$")) {
@@ -240,8 +241,13 @@ public final class LambdaMetaFactory {
 			Value value = _invokeImplMethod(jb, us, args);
 			
 			if (value instanceof InvokeExpr && soot.VoidType.v().equals(implMethod.returnType())) {
+				// implementation method is void
+				us.add(Jimple.v().newInvokeStmt(value));
+			} else if (soot.VoidType.v().equals(retType)) {
+				// dispatch method is void
 				us.add(Jimple.v().newInvokeStmt(value));
 			} else {
+				// neither is void, must pass through return value
 				Local ret = Jimple.v().newLocal("r", retType);
 				jb.getLocals().add(ret);
 				us.add(Jimple.v().newAssignStmt(
