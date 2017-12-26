@@ -314,7 +314,7 @@ public final class LambdaMetaFactory {
 
 		private List<Local> rest(List<Local> args) {
 			int first = 1;
-			int last = args.size() - 1;
+			int last = args.size();
 			if (last < first)
 				return Collections.<Local>emptyList();
 			return args.subList(first, last);
