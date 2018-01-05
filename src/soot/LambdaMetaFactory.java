@@ -32,7 +32,7 @@ public final class LambdaMetaFactory {
                         List<? extends Value> bootstrapArgs,
                         int tag,
                         String name,
-                        Type[] types) {
+                        Type[] types, String enclosingClassname) {
         if(bootstrapArgs.size() != 3 || 
            !(bootstrapArgs.get(0) instanceof ClassConstant) ||
            !(bootstrapArgs.get(1) instanceof MethodHandle) ||
@@ -62,10 +62,16 @@ public final class LambdaMetaFactory {
         SootClass iface = ((RefType) types[types.length-1]).getSootClass();
         
         // Our thunk class implements the functional interface
-        String dummyName = "<init>".equals(implMethod.name()) ? "init" : implMethod.name(); // class names cannot contain <>  //$NON-NLS-1$//$NON-NLS-2$
-        // FIXME: $ cause confusion in inner class inference; remove for now
+        if (enclosingClassname == null || enclosingClassname.equals("")) //$NON-NLS-1$
+        		enclosingClassname = "soot.dummy."; //$NON-NLS-1$
+        else
+        		enclosingClassname = enclosingClassname + "$"; //$NON-NLS-1$
+        
+        // class names cannot contain <>  
+        String dummyName = "<init>".equals(implMethod.name()) ? "init" : implMethod.name(); //$NON-NLS-1$//$NON-NLS-2$
+        // FIXME: $ causes confusion in inner class inference; remove for now
         dummyName = dummyName.replaceAll("\\$", "_");  //$NON-NLS-1$//$NON-NLS-2$
-        String className = "soot.dummy." + dummyName + "__" + uniqSupply();  //$NON-NLS-1$//$NON-NLS-2$
+        String className = enclosingClassname + dummyName + "__" + uniqSupply();  //$NON-NLS-1$//$NON-NLS-2$
         SootClass tclass = new SootClass(className);
         tclass.addInterface(iface);
         tclass.setSuperclass(Scene.v().getSootClass("java.lang.Object"));
