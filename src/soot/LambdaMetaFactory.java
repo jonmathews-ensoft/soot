@@ -32,10 +32,11 @@ public final class LambdaMetaFactory {
                         int tag,
                         String name,
                         Type[] types) {
-        if(bootstrapArgs.size() != 3 || 
+        if(bootstrapArgs.size() < 3 || 
            !(bootstrapArgs.get(0) instanceof ClassConstant) ||
            !(bootstrapArgs.get(1) instanceof MethodHandle) ||
-           !(bootstrapArgs.get(2) instanceof ClassConstant)) {
+           !(bootstrapArgs.get(2) instanceof ClassConstant) ||
+           (bootstrapArgs.size() > 3 && !(bootstrapArgs.get(3) instanceof IntConstant))) {
             G.v().out.println("warning: LambdaMetaFactory: unexpected arguments for LambdaMetaFactor.metaFactory");
             return null;
         }
@@ -46,6 +47,51 @@ public final class LambdaMetaFactory {
             G.v().out.println("warning: LambdaMetaFactory: " + 
                               samMethodType + " != " + instantiatedMethodType);
             return null;
+        }
+        int flags = 0;
+        if(bootstrapArgs.size() > 3)
+            flags = ((IntConstant) bootstrapArgs.get(3)).value;
+        boolean serializable = (flags & 1 /* FLAGS_SERIALIZABLE */) != 0;
+        List<ClassConstant> markerInterfaces = new ArrayList<ClassConstant>();
+        List<ClassConstant> bridges = new ArrayList<ClassConstant>();
+        int va = 4;
+        if((flags & 2 /* FLAG_MARKERS */) != 0) {
+            if(va == bootstrapArgs.size() || !(bootstrapArgs.get(va) instanceof IntConstant)) {
+                G.v().out.println("warning: LambdaMetaFactory: unexpected arguments for LambdaMetaFactory.altMetaFactory");
+                return null;
+            }
+            int count = ((IntConstant) bootstrapArgs.get(va++)).value;
+            for(int i=0;i<count;i++) {
+                if(va >= bootstrapArgs.size()) {
+                    G.v().out.println("warning: LambdaMetaFactory: unexpected arguments for LambdaMetaFactory.altMetaFactory");
+                    return null;
+                }
+                Value v = bootstrapArgs.get(va++);
+                if(!(v instanceof ClassConstant)) {
+                    G.v().out.println("warning: LambdaMetaFactory: unexpected arguments for LambdaMetaFactory.altMetaFactory");
+                    return null;
+                }
+                markerInterfaces.add((ClassConstant)v);
+            }
+        }
+        if((flags & 4 /* FLAG_BRIDGES */) != 0) {
+            if(va == bootstrapArgs.size() || !(bootstrapArgs.get(va) instanceof IntConstant)) {
+                G.v().out.println("warning: LambdaMetaFactory: unexpected arguments for LambdaMetaFactory.altMetaFactory");
+                return null;
+            }
+            int count = ((IntConstant) bootstrapArgs.get(va++)).value;
+            for(int i=0;i<count;i++) {
+                if(va >= bootstrapArgs.size()) {
+                    G.v().out.println("warning: LambdaMetaFactory: unexpected arguments for LambdaMetaFactory.altMetaFactory");
+                    return null;
+                }
+                Value v = bootstrapArgs.get(va++);
+                if(!(v instanceof ClassConstant)) {
+                    G.v().out.println("warning: LambdaMetaFactory: unexpected arguments for LambdaMetaFactory.altMetaFactory");
+                    return null;
+                }
+                bridges.add((ClassConstant)v);
+            }
         }
         
         Type[] samTypes = Util.v().jimpleTypesOfFieldOrMethodDescriptor(samMethodType);
@@ -63,6 +109,10 @@ public final class LambdaMetaFactory {
         String className = "soot.dummy." + implMethod.name() + "$" + uniqSupply();
         SootClass tclass = new SootClass(className);
         tclass.addInterface(iface);
+        if(serializable)
+            tclass.addInterface(RefType.v("java.io.Serializable").getSootClass());
+        for(int i=0;i<markerInterfaces.size();i++)
+            tclass.addInterface(RefType.v(markerInterfaces.get(i).getValue()).getSootClass());
         
         // It contains fields for all the captures in the lambda
         List<SootField> capFields = new ArrayList<SootField>(capTypes.size());
