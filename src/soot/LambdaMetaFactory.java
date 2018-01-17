@@ -20,11 +20,14 @@ package soot;
 
 import soot.jimple.*;
 import soot.jimple.toolkits.scalar.LocalNameStandardizer;
+import soot.util.Chain;
+import soot.util.HashChain;
 import soot.coffi.Util;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 
 public final class LambdaMetaFactory {
@@ -146,104 +149,146 @@ public final class LambdaMetaFactory {
 
             SootClass tclass = m.getDeclaringClass();
             JimpleBody jb = Jimple.v().newBody(m);
-            PatchingChain<Unit> us = jb.getUnits();
 
             if(m.getName().equals("<init>")) {
-                Local l = Jimple.v().newLocal("r", tclass.getType());
-                jb.getLocals().add(l);
-                us.add(Jimple.v().newIdentityStmt(
-                    l,
-                    Jimple.v().newThisRef(tclass.getType())
-                ));
-                us.add(Jimple.v().newInvokeStmt(
-                    Jimple.v().newSpecialInvokeExpr(
-                        l,
-                        Scene.v().makeConstructorRef(
-                            Scene.v().getObjectType().getSootClass(), Collections.<Type>emptyList()
-                        ),
-                        Collections.<Value>emptyList())
-                ));
-                int i=0;
-                for(SootField f : capFields) {
-                    Local l2 = Jimple.v().newLocal("c" + i, f.getType());
-                    jb.getLocals().add(l2);
-                    us.add(Jimple.v().newIdentityStmt(
-                        l2,
-                        Jimple.v().newParameterRef(f.getType(), i)
-                    ));
-                    us.add(Jimple.v().newAssignStmt(
-                        Jimple.v().newInstanceFieldRef(l, f.makeRef()),
-                        l2
-                    ));
-                    i++;
-                }
-                us.add(Jimple.v().newReturnVoidStmt());
+                getInitBody(tclass, jb);
             } else if(m.getName().equals("bootstrap$")) {
-            	
-                List<Value> capValues = new ArrayList<Value>();
-                List<Type> capTypes = new ArrayList<Type>();
-                int i=0;
-                for (SootField capField : capFields) {
-                		Type type = capField.getType();
-                		capTypes.add(type);
-                		Local p = Jimple.v().newLocal("p", type);
-                		jb.getLocals().add(p);
-                		ParameterRef pref = Jimple.v().newParameterRef(type,i);
-                		us.add(Jimple.v().newIdentityStmt(p, pref));
-					capValues.add(p);
-					i++;
-				}
-                Local l = Jimple.v().newLocal("r", tclass.getType());
-                jb.getLocals().add(l);
-                Value val = Jimple.v().newNewExpr(tclass.getType());
-                us.add(Jimple.v().newAssignStmt(l, val));
-                us.add(Jimple.v().newInvokeStmt(
-                    Jimple.v().newSpecialInvokeExpr(
-                        l,
-                        Scene.v().makeConstructorRef(tclass, capTypes),
-                        capValues)
-                ));
-                us.add(Jimple.v().newReturnStmt(l));
+                getBootstrapBody(tclass, jb);
             } else {
-                Local this_ = Jimple.v().newLocal("r", tclass.getType());
-                jb.getLocals().add(this_);
-                us.add(Jimple.v().newIdentityStmt(
-                    this_,
-                    Jimple.v().newThisRef(tclass.getType())
-                ));
-
-                List<Local> args = new ArrayList<Local>();
-                
-                for(SootField f : capFields) {
-                    int i = args.size();
-                    Local l = Jimple.v().newLocal("c" + i, f.getType());
-                    jb.getLocals().add(l);
-                    us.add(Jimple.v().newAssignStmt(
-                        l, 
-                        Jimple.v().newInstanceFieldRef(this_, f.makeRef())
-                    ));
-                    args.add(l);
-                }
-
-                int j = 0;
-                for(Type ty : paramTypes) {
-                    Local l = Jimple.v().newLocal("a" + j, ty);
-                    jb.getLocals().add(l);
-                    us.add(Jimple.v().newIdentityStmt(
-                        l,
-                        Jimple.v().newParameterRef(ty, j)
-                    ));
-                    args.add(l);
-                    j++;
-                }
-                
-                invokeImplMethod(jb, us, args);
+                getInvokeBody(tclass, jb);
             }
             
             // rename locals consistent with JimpleBodyPack
             LocalNameStandardizer.v().transform(jb);
             return jb;
         }
+
+        /**
+         * Thunk class init (constructor)
+         * @param tclass thunk class
+         * @param jb
+         */
+		private void getInitBody(SootClass tclass, JimpleBody jb) {
+            PatchingChain<Unit> us = jb.getUnits();
+
+			// @this
+			Local l = Jimple.v().newLocal("r", tclass.getType());
+			jb.getLocals().add(l);
+			us.add(Jimple.v().newIdentityStmt(
+			    l,
+			    Jimple.v().newThisRef(tclass.getType())
+			));
+			
+			// @parameters
+			Chain<Local> capLocals = new HashChain<>();
+			int i=0;
+			for(SootField f : capFields) {
+				Local l2 = Jimple.v().newLocal("c" + i, f.getType());
+				jb.getLocals().add(l2);
+				us.add(Jimple.v().newIdentityStmt(
+						l2,
+						Jimple.v().newParameterRef(f.getType(), i)
+						));
+				capLocals.add(l2);
+				i++;
+			}
+			
+			// super   java.lang.Object.<init>
+			us.add(Jimple.v().newInvokeStmt(
+			    Jimple.v().newSpecialInvokeExpr(
+			        l,
+			        Scene.v().makeConstructorRef(
+			            Scene.v().getObjectType().getSootClass(), Collections.<Type>emptyList()
+			        ),
+			        Collections.<Value>emptyList())
+			));
+			
+			// assign parameters to fields 
+			Iterator<Local> localItr = capLocals.iterator();
+			for(SootField f : capFields) {
+				Local l2 = localItr.next();
+				us.add(Jimple.v().newAssignStmt(
+						Jimple.v().newInstanceFieldRef(l, f.makeRef()),
+						l2
+						));
+			}
+			
+			us.add(Jimple.v().newReturnVoidStmt());
+		}
+
+		private void getBootstrapBody(SootClass tclass, JimpleBody jb) {
+            PatchingChain<Unit> us = jb.getUnits();
+			List<Value> capValues = new ArrayList<Value>();
+			List<Type> capTypes = new ArrayList<Type>();
+			int i=0;
+			for (SootField capField : capFields) {
+					Type type = capField.getType();
+					capTypes.add(type);
+					Local p = Jimple.v().newLocal("p", type);
+					jb.getLocals().add(p);
+					ParameterRef pref = Jimple.v().newParameterRef(type,i);
+					us.add(Jimple.v().newIdentityStmt(p, pref));
+				capValues.add(p);
+				i++;
+			}
+			Local l = Jimple.v().newLocal("r", tclass.getType());
+			jb.getLocals().add(l);
+			Value val = Jimple.v().newNewExpr(tclass.getType());
+			us.add(Jimple.v().newAssignStmt(l, val));
+			us.add(Jimple.v().newInvokeStmt(
+			    Jimple.v().newSpecialInvokeExpr(
+			        l,
+			        Scene.v().makeConstructorRef(tclass, capTypes),
+			        capValues)
+			));
+			us.add(Jimple.v().newReturnStmt(l));
+		}
+
+		private void getInvokeBody(SootClass tclass, JimpleBody jb) {
+            PatchingChain<Unit> us = jb.getUnits();
+
+			// @this
+			Local this_ = Jimple.v().newLocal("r", tclass.getType());
+			jb.getLocals().add(this_);
+			us.add(Jimple.v().newIdentityStmt(
+			    this_,
+			    Jimple.v().newThisRef(tclass.getType())
+			));
+			
+			// @parameter for direct arguments
+			Chain<Local> paramLocals = new HashChain<>();
+			int j = 0;
+			for(Type ty : paramTypes) {
+			    Local l = Jimple.v().newLocal("a" + j, ty);
+			    jb.getLocals().add(l);
+			    us.add(Jimple.v().newIdentityStmt(
+			        l,
+			        Jimple.v().newParameterRef(ty, j)
+			    ));
+			    paramLocals.add(l);
+			    j++;
+			}
+
+			List<Local> args = new ArrayList<Local>();
+			
+			// captured arguments
+			for(SootField f : capFields) {
+			    int i = args.size();
+			    Local l = Jimple.v().newLocal("c" + i, f.getType());
+			    jb.getLocals().add(l);
+			    us.add(Jimple.v().newAssignStmt(
+			        l, 
+			        Jimple.v().newInstanceFieldRef(this_, f.makeRef())
+			    ));
+			    args.add(l);
+			}
+
+			// direct arguments
+			for (Local l : paramLocals)
+				args.add(l);
+			
+			invokeImplMethod(jb, us, args);
+		}
 
 		private void invokeImplMethod(JimpleBody jb, PatchingChain<Unit> us, List<Local> args) {
 			Value value = _invokeImplMethod(jb, us, args);
