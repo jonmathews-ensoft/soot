@@ -296,9 +296,11 @@ public final class LambdaMetaFactory {
 			if (value instanceof InvokeExpr && soot.VoidType.v().equals(implMethod.returnType())) {
 				// implementation method is void
 				us.add(Jimple.v().newInvokeStmt(value));
+				us.add(Jimple.v().newReturnVoidStmt());
 			} else if (soot.VoidType.v().equals(retType)) {
 				// dispatch method is void
 				us.add(Jimple.v().newInvokeStmt(value));
+				us.add(Jimple.v().newReturnVoidStmt());
 			} else {
 				// neither is void, must pass through return value
 				Local ret = Jimple.v().newLocal("r", retType);
