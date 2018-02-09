@@ -1278,11 +1278,12 @@ final class AsmMethodSource implements MethodSource {
 			SootMethodRef bootstrap_model = null;
 			
 			// FIXME? better way to do this check?
-			if(bsmMethodRef.toString().equals("<java.lang.invoke.LambdaMetafactory: java.lang.invoke.CallSite metafactory(java.lang.invoke.MethodHandles$Lookup,java.lang.String,java.lang.invoke.MethodType,java.lang.invoke.MethodType,java.lang.invoke.MethodHandle,java.lang.invoke.MethodType)>")) {
+			String bsmMethodRefStr = bsmMethodRef.toString();
+			if(bsmMethodRefStr.equals("<java.lang.invoke.LambdaMetafactory: java.lang.invoke.CallSite metafactory(java.lang.invoke.MethodHandles$Lookup,java.lang.String,java.lang.invoke.MethodType,java.lang.invoke.MethodType,java.lang.invoke.MethodHandle,java.lang.invoke.MethodType)>")
+			   || bsmMethodRefStr.equals("<java.lang.invoke.LambdaMetafactory: java.lang.invoke.CallSite altMetafactory(java.lang.invoke.MethodHandles$Lookup,java.lang.String,java.lang.invoke.MethodType,java.lang.Object[])>")) {
 				String enclosingClassname = body.getMethod().getDeclaringClass().getName();
-				bootstrap_model = LambdaMetaFactory.makeLambdaHelper(bsmMethodArgs, insn.bsm.getTag(), insn.name, types, enclosingClassname);
-			}
-			
+    			    bootstrap_model = LambdaMetaFactory.makeLambdaHelper(bsmMethodArgs, insn.bsm.getTag(), insn.name, types, enclosingClassname);
+    			}
 			
 			InvokeExpr expr;
 			
